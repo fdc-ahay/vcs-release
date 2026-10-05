@@ -1,0 +1,11 @@
+{
+  "name": "vcs-release",
+  "owner": { "name": "fdc-ahay" },
+  "plugins": [
+    {
+      "name": "vcs",
+      "source": "./",
+      "description": "Vibe Code Store platform skills: vcs-platform, vcs-superpowers, vcs-iap-auth"
+    }
+  ]
+}

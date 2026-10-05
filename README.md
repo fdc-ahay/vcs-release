@@ -20,3 +20,30 @@ Download the latest `vcs_<version>_windows_amd64.zip` from
 directory to user `PATH`.
 
 macOS DMGs and Windows executables are unsigned. Gatekeeper or SmartScreen may warn.
+
+## Claude Code skills
+
+`skills/` publishes the VCS coding skills that `vcs setup` installs:
+
+| Skill | Purpose |
+| --- | --- |
+| `vcs-platform` | Platform rules enforced at deploy time (Postgres, Valkey, observability, rating, IAP, `features.yaml`) |
+| `vcs-superpowers` | Process discipline: skill use, verification, deploy alignment |
+| `vcs-iap-auth` | Login/RBAC through validated IAP JWT, never a parallel password login |
+
+Install as a Claude Code plugin:
+
+```sh
+claude plugin marketplace add fdc-ahay/vcs-release
+claude plugin install vcs@vcs-release
+```
+
+Or copy them to user scope:
+
+```sh
+git clone --depth 1 https://github.com/fdc-ahay/vcs-release.git /tmp/vcs-release
+mkdir -p ~/.claude/skills && cp -R /tmp/vcs-release/skills/* ~/.claude/skills/
+```
+
+`vcs-platform` is generated from `docs/deployment-spec.md` in the private platform repository; do
+not edit it here.
