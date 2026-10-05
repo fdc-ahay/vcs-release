@@ -30,6 +30,9 @@ macOS DMGs and Windows executables are unsigned. Gatekeeper or SmartScreen may w
 | `vcs-platform` | Platform rules enforced at deploy time (Postgres, Valkey, observability, rating, IAP, `features.yaml`) |
 | `vcs-superpowers` | Process discipline: skill use, verification, deploy alignment |
 | `vcs-iap-auth` | Login/RBAC through validated IAP JWT, never a parallel password login |
+| `vcs-deploy` | Deploy completion loop: repair, test, commit, push to Forgejo, `vcs deploy` |
+
+The plugin also adds the `/vcs:deploy` command (same content as the `/deploy` command `vcs setup` installs).
 
 Install as a Claude Code plugin:
 

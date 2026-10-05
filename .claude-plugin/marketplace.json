@@ -5,7 +5,7 @@
     {
       "name": "vcs",
       "source": "./",
-      "description": "Vibe Code Store platform skills: vcs-platform, vcs-superpowers, vcs-iap-auth"
+      "description": "Vibe Code Store platform skills: vcs-platform, vcs-superpowers, vcs-iap-auth, vcs-deploy"
     }
   ]
 }

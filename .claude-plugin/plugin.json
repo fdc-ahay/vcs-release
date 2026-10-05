@@ -1,7 +1,7 @@
 {
   "name": "vcs",
-  "description": "Vibe Code Store platform skills: vcs-platform, vcs-superpowers, vcs-iap-auth",
-  "version": "1.0.0",
+  "description": "Vibe Code Store platform skills: vcs-platform, vcs-superpowers, vcs-iap-auth, vcs-deploy",
+  "version": "1.1.0",
   "author": { "name": "fdc-ahay" },
   "repository": "https://github.com/fdc-ahay/vcs-release"
 }
