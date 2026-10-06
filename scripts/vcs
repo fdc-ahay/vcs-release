@@ -1,21 +1,68 @@
 #!/bin/sh
+# Launcher for the vcs CLI. The plugin ships only the small hook binaries; the CLI is
+# downloaded once from this plugin's own GitHub release, checked against SHA-256
+# checksums, and cached per plugin version. Nothing needs to be installed beforehand.
+#
+# Test and offline overrides: VCS_CLI_BINARY (run this binary), VCS_RELEASE_BASE_URL
+# (release download base, default GitHub), VCS_PLUGIN_CACHE (cache directory).
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+if [ -n "${VCS_CLI_BINARY:-}" ]; then exec "$VCS_CLI_BINARY" "$@"; fi
+
 case "$(uname -s)" in Darwin) os=darwin;; Linux) os=linux;; MINGW*|MSYS*|CYGWIN*) os=windows;; *) echo 'VCS: unsupported operating system' >&2; exit 1;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64|amd64) arch=amd64;; *) echo 'VCS: unsupported CPU architecture' >&2; exit 1;; esac
-name="vcs_${os}_${arch}"
-[ "$os" != windows ] || name="$name.exe"
-exe="$root/bin/$name"
-[ -x "$exe" ] || { echo "VCS plugin incomplete: bundled binary $name is missing. Reinstall the vcs plugin from the marketplace." >&2; exit 1; }
-# The binaries ship inside the plugin, so verify them against the checksum list built with the package.
-sums="$root/bin/SHA256SUMS"
+ext=; [ "$os" != windows ] || ext=.exe
+# Releases carry no Windows arm64 build; the amd64 one runs under Windows' emulation.
+carch=$arch; [ "$os$arch" != windowsarm64 ] || carch=amd64
+name="vcs_${os}_${arch}$ext"
+
+version=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$root/.claude-plugin/plugin.json" | head -1)
+cache="${VCS_PLUGIN_CACHE:-${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}/vcs-plugin}/$version"
+exe="$cache/bin/$name"
+
+sha256() {
+	if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+	elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d' ' -f1
+	else echo "VCS: sha256sum or shasum is required to verify the download" >&2; return 1; fi
+}
+
+fetch() { # url destination
+	if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 2 --connect-timeout 15 -o "$2" "$1"
+	elif command -v wget >/dev/null 2>&1; then wget -q -O "$2" "$1"
+	else echo "VCS: curl or wget is required to download the CLI" >&2; return 1; fi
+}
+
+install_cli() (
+	case "$version" in ''|0.1.0) echo "VCS: this plugin build (version '${version:-unknown}') is not a release, so there is no CLI to download. Install the vcs plugin from the marketplace." >&2; exit 1;; esac
+	tag="v$version"
+	archive="vcs_${tag}_${os}_${carch}.tar.gz"; [ "$os" != windows ] || archive="vcs_${tag}_${os}_${carch}.zip"
+	base="${VCS_RELEASE_BASE_URL:-https://github.com/fdc-ahay/vcs-release/releases/download}/$tag"
+	tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+	echo "VCS: downloading the CLI ($tag, $os/$carch) once..." >&2
+	fetch "$base/$archive" "$tmp/$archive" || { echo "VCS: could not download $base/$archive. Check the network and try again." >&2; exit 1; }
+	# The checksum list shipped inside the plugin (pinned at release time) wins over the
+	# one downloaded next to the archive.
+	if [ -f "$root/bin/RELEASE_CHECKSUMS" ]; then sums="$root/bin/RELEASE_CHECKSUMS"
+	else fetch "$base/checksums.txt" "$tmp/checksums.txt" || { echo "VCS: could not download the release checksums." >&2; exit 1; }; sums="$tmp/checksums.txt"; fi
+	expected=$(grep " $archive\$" "$sums" | head -1 | cut -d' ' -f1 || true)
+	actual=$(sha256 "$tmp/$archive")
+	[ -n "$expected" ] && [ "$actual" = "$expected" ] || { echo "VCS: the downloaded CLI failed its checksum; not installing it." >&2; exit 1; }
+	tar -xf "$tmp/$archive" -C "$tmp"
+	built="$tmp/vcs_${tag}_${os}_${carch}/vcs$ext"
+	[ -f "$built" ] || { echo "VCS: the CLI archive has an unexpected layout." >&2; exit 1; }
+	mkdir -p "$cache/bin"
+	cp "$built" "$cache/bin/$name.tmp" && chmod +x "$cache/bin/$name.tmp"
+	printf '%s  %s\n' "$(sha256 "$cache/bin/$name.tmp")" "$name" > "$cache/bin/SHA256SUMS"
+	mv -f "$cache/bin/$name.tmp" "$exe"
+)
+
+[ -x "$exe" ] || install_cli
+
+# Refuse a cached binary that no longer matches the checksum recorded when it was verified.
+sums="$cache/bin/SHA256SUMS"
 if [ -f "$sums" ]; then
- if command -v sha256sum >/dev/null 2>&1; then actual=$(sha256sum "$exe" | cut -d' ' -f1)
- elif command -v shasum >/dev/null 2>&1; then actual=$(shasum -a 256 "$exe" | cut -d' ' -f1)
- else actual=; fi
- if [ -n "$actual" ]; then
-  expected=$(grep " $name\$" "$sums" | cut -d' ' -f1 || true)
-  [ "$actual" = "$expected" ] || { echo "VCS plugin binary $name failed its checksum. Reinstall the vcs plugin from the marketplace." >&2; exit 1; }
- fi
+	expected=$(grep " $name\$" "$sums" | head -1 | cut -d' ' -f1 || true)
+	[ -n "$expected" ] && [ "$(sha256 "$exe")" = "$expected" ] || { echo "VCS: the cached CLI $name failed its checksum. Delete $cache and run again." >&2; exit 1; }
 fi
 exec "$exe" "$@"
