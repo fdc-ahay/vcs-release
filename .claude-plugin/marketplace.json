@@ -1,11 +1,1 @@
-{
-  "name": "vcs-release",
-  "owner": { "name": "fdc-ahay" },
-  "plugins": [
-    {
-      "name": "vcs",
-      "source": "./",
-      "description": "Vibe Code Store platform skills: vcs-platform, vcs-superpowers, vcs-iap-auth, vcs-deploy"
-    }
-  ]
-}
+{"name":"vcs-release","owner":{"name":"FDC Engineering"},"plugins":[{"name":"vcs","source":"./","description":"Agent-first VCS delivery"}],"metadata":{"description":"VCS native agent delivery plugins"}}

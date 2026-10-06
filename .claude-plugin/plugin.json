@@ -1,7 +1,1 @@
-{
-  "name": "vcs",
-  "description": "Vibe Code Store platform skills: vcs-platform, vcs-superpowers, vcs-iap-auth, vcs-deploy",
-  "version": "1.1.0",
-  "author": { "name": "fdc-ahay" },
-  "repository": "https://github.com/fdc-ahay/vcs-release"
-}
+{"name":"vcs","version":"0.1.34","description":"Agent-first VCS delivery using your native subscription","skills":"./skills/","commands":"./commands/","author":{"name":"FDC Engineering"}}
