@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const platform = { darwin: 'darwin', linux: 'linux', win32: 'windows' }[process.platform];
 const arch = { x64: 'amd64', arm64: 'arm64' }[process.arch];
-const executable = resolve(root, 'bin', `vcs-hook_${platform}_${arch}${process.platform === 'win32' ? '.exe' : ''}`);
+const executable = resolve(root, 'libexec', `vcs-hook_${platform}_${arch}${process.platform === 'win32' ? '.exe' : ''}`);
 
 function keywordContext(prompt) {
   if (!platform || !arch) throw new Error('VCS: unsupported OpenCode platform');

@@ -43,7 +43,7 @@ install_cli() (
 	fetch "$base/$archive" "$tmp/$archive" || { echo "VCS: could not download $base/$archive. Check the network and try again." >&2; exit 1; }
 	# The checksum list shipped inside the plugin (pinned at release time) wins over the
 	# one downloaded next to the archive.
-	if [ -f "$root/bin/RELEASE_CHECKSUMS" ]; then sums="$root/bin/RELEASE_CHECKSUMS"
+	if [ -f "$root/libexec/RELEASE_CHECKSUMS" ]; then sums="$root/libexec/RELEASE_CHECKSUMS"
 	else fetch "$base/checksums.txt" "$tmp/checksums.txt" || { echo "VCS: could not download the release checksums." >&2; exit 1; }; sums="$tmp/checksums.txt"; fi
 	expected=$(grep " $archive\$" "$sums" | head -1 | cut -d' ' -f1 || true)
 	actual=$(sha256 "$tmp/$archive")

@@ -1,6 +1,6 @@
 # VCS marketplace plugin
 
-Canonical source for `vcs@vcs-release`. The release workflow builds the small standalone hook executables and publishes the marketplace tree (about 15 MB) to the release repository; the CLI is not committed there. `scripts/vcs` downloads the CLI of the same version from the GitHub release on first use, verifies it against `bin/RELEASE_CHECKSUMS` (pinned at publish time) and caches it, so the first CLI call needs network access. Source checkout alone is not an installable package: run `scripts/build-plugin.sh VERSION .build/plugin` first.
+Canonical source for `vcs@vcs-release`. The release workflow builds the small standalone hook executables and publishes the marketplace tree (about 15 MB) to the release repository; the CLI is not committed there. `scripts/vcs` downloads the CLI of the same version from the GitHub release on first use, verifies it against `libexec/RELEASE_CHECKSUMS` (pinned at publish time) and caches it, so the first CLI call needs network access. Source checkout alone is not an installable package: run `scripts/build-plugin.sh VERSION .build/plugin` first.
 
 Claude Code installation uses `/plugin marketplace add fdc-ahay/vcs-release`, then `/plugin install vcs@vcs-release`. Enable the plugin and reload the session through the client's UI when required. `/vcs:deploy` is visible in the command picker. The UserPromptSubmit hook routes standalone `vcs` prompts, including questions, without automatically authorizing deployment. CLI installation is not required.
 
