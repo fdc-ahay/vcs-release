@@ -23,6 +23,30 @@ For authorized deployment, execute through your tools; never ask the user to ope
    - `BUILD_NOT_STARTED`, `BUILD_IMAGE_FAILED`, `RELEASE_STARTUP_PROBE_FAILED`, `SERVICE_NAME_COLLISION`, `plugin_update_required` and other failures carry `message`, `guidance` and a `deployment.log` tail: apply the guidance (for example a wrong port, or a binary built for the wrong CPU shown as `exec format error`), commit, and run again.
    Tool calls time out, so the command follows the deployment for at most 8 minutes and then reports `running`: run the same command again to rejoin that deployment (it is idempotent while a deployment of that commit is in flight; a finished commit deployed again is a new release, which is how secret or database changes take effect). Report `deployment_id`, exact commit, `url`, or the concrete `failed` code and message. Never repair or redeploy solely for AI QC findings: findings are alerts.
 
+### What apps on VCS can and cannot do
+
+- **External APIs need no VCS permission.** Tableau, Meta, TikTok, Google Ads, Gmail, Google Calendar, payment or any other HTTPS API can be called directly; outbound internet access is open. The project permission list (PostgreSQL, Redis, MongoDB, Fast API, WRAP API, JOBI API, Helpy Happy API, FDC API) only names resources VCS provisions or brokers; nothing else is blocked by it, and the deploy gate never checks it. Never tell the user an integration needs the platform team's approval. API tokens are secrets: collect them with `env request --names …`, never in the repo or the chat.
+- **Only HTTP services run.** There is no worker, queue consumer or cron kind, and CPU is allocated only while a request is being served (request based), so work started in the background after a response, timers and in-process schedulers do not run reliably. Long work must finish inside one request (Cloud Run allows up to about 5 minutes per request by default) or be split into several requests.
+- **Scheduled work (daily refresh, reminders, digests) uses a Claude Cowork scheduled task**, not code inside the app:
+  1. Add an endpoint such as `POST /internal/refresh` that does the whole job synchronously and is safe for anyone to call: idempotent, a no-op when the last successful run was recent (for example within 30 minutes), returns only a status (never data), and logs what it did. Then no secret is needed to trigger it.
+  2. Deploy, then call it once yourself and check the result.
+  3. Tell the user to create a scheduled task in Claude Cowork (Claude Desktop) at the time they want, for example every day 07:15, with an instruction such as: "Send `POST https://<app>/internal/refresh` and report the status in one line; if it is not 2xx, tell me." Cowork runs scheduled tasks while their computer is on and Claude Desktop is open, so mention that, and keep the endpoint safe to call again later the same day if a run was missed.
+  Do not try to deploy a separate job or worker for this.
+- **AI inside the app** goes through the VCS AI gateway: base URL `https://vcs.ibbr.info/api/v1/ai` (OpenAI paths such as `/chat/completions`, Anthropic paths such as `/messages`), `model` set to a slug from `GET /api/v1/ai-models`, and a `vcs_` API key with scope `ai_models:use` that the user creates on the VCS API Keys page and pastes on the `env request` page (for example as `AI_GATEWAY_KEY`; names starting with `VCS_` are reserved). Usage is metered to that user.
+
+### Moving a Claude artifact to VCS
+
+An artifact runs inside claude.ai and uses its runtime (Claude calls, claude.ai connectors, artifact storage); none of that exists on VCS, so rebuild it as an ordinary web app instead of copying it:
+
+| In the artifact | On VCS |
+|---|---|
+| Claude calls from the page (`window.claude`) | A server endpoint that calls the VCS AI gateway with the key from secrets |
+| claude.ai connectors (Tableau, Meta, Ads, Drive …) | The service's own API, called by the server with tokens from secrets |
+| Artifact storage or shared state | PostgreSQL that VCS provisions automatically (`DATABASE_URL`) |
+| A run Claude does every morning | A refresh endpoint plus a Claude Cowork scheduled task (above) |
+
+Keep the artifact's interface and logic; move data fetching and secrets to the server side.
+
 ### Moving a live app from another host with its database
 
 Applies to any previous host: Render, Railway, Heroku, Fly.io, Vercel, Supabase, a VPS. The user is usually not technical: do every step yourself and ask only the questions below, through the native question UI, one at a time.
