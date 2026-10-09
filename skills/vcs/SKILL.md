@@ -34,6 +34,49 @@ For authorized deployment, execute through your tools; never ask the user to ope
   Do not try to deploy a separate job or worker for this.
 - **AI inside the app** goes through the VCS AI gateway: base URL `https://vcs.ibbr.info/api/v1/ai` (OpenAI paths such as `/chat/completions`, Anthropic paths such as `/messages`), `model` set to a slug from `GET /api/v1/ai-models`, and a `vcs_` API key with scope `ai_models:use` that the user creates on the VCS API Keys page and pastes on the `env request` page (for example as `AI_GATEWAY_KEY`; names starting with `VCS_` are reserved). Usage is metered to that user.
 
+- **Email from the app needs no SMTP setup**: see "Sending email from an app" below.
+
+### Sending email from an app
+
+Use this whenever the app must email someone (notifications, reminders, reports, invitations, password reset, contact forms). VCS sends it through the company mail relay; there is nothing to configure and no credential to ask for.
+
+- Every deployed app receives two variables: `VCS_EMAIL_URL` and `VCS_EMAIL_TOKEN` (a secret). An app deployed before 2026-10-09 gets them on its next deploy.
+- Mail arrives from `vcs-official@fdcdentalclinic.co.id`. The app chooses only the display name (`from_name`, default: the app name), never the address, so it cannot send as `admin@` or another mailbox. When recipients should reply to a person or team, set `reply_to`.
+- Send from server code only (never browser code: the token is a secret), and never log the token.
+
+Node.js:
+```js
+async function sendEmail({ to, subject, text, html, replyTo }) {
+  if (!process.env.VCS_EMAIL_URL) { console.log('[email]', to, subject); return } // local development
+  const res = await fetch(process.env.VCS_EMAIL_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.VCS_EMAIL_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, subject, text, html, reply_to: replyTo, from_name: 'Jadwal Dokter' }),
+  })
+  if (!res.ok) console.error('[email] failed', res.status, await res.text())
+}
+```
+
+Python:
+```python
+import os, requests
+def send_email(to, subject, text=None, html=None, reply_to=None):
+    url = os.environ.get("VCS_EMAIL_URL")
+    if not url:
+        print("[email]", to, subject); return  # local development
+    r = requests.post(url, timeout=30, json={"to": to, "subject": subject, "text": text, "html": html, "reply_to": reply_to},
+                      headers={"Authorization": f"Bearer {os.environ['VCS_EMAIL_TOKEN']}"})
+    if r.status_code != 202:
+        print("[email] failed", r.status_code, r.text)
+```
+
+Request body: `to` (one address or a list of at most 50), `subject`, `text` and/or `html` (at least one), optional `reply_to`, `from_name`. Everyone in one message sees the other recipients, so for bulk mail send one request per person. Answers: `202` sent; `400` invalid message (the error says which field); `401` bad token; `429` over 500 recipients per app per 24 hours; `503` platform email not configured yet; `502` relay refused. No attachments: link to a page in the app instead.
+
+Rules:
+- A failed email must not fail the user's action: log it and continue (or retry later).
+- Do not add an SMTP library (nodemailer, smtplib …) or a mail service (Resend, SendGrid …), and do not ask the user for SMTP credentials. Apps that already have their own mail setup keep it; switch them to VCS email only when the user asks.
+- After deploying, test once by sending an email to the user's own address and ask them to confirm it arrived (check spam on first use).
+
 ### Moving a Claude artifact to VCS
 
 An artifact runs inside claude.ai and uses its runtime (Claude calls, claude.ai connectors, artifact storage); none of that exists on VCS, so rebuild it as an ordinary web app instead of copying it:
