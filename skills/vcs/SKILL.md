@@ -38,7 +38,7 @@ For authorized deployment, execute through your tools; never ask the user to ope
 
 ### Sending email from an app
 
-Use this whenever the app must email someone (notifications, reminders, reports, invitations, password reset, contact forms). VCS sends it through the company mail relay; there is nothing to configure and no credential to ask for.
+Use this whenever the app must email someone (notifications, reminders, reports, invitations, password reset, contact forms). VCS sends it through the company's email delivery provider, **Brevo** (SMTP relay, domain `fdcdentalclinic.co.id` authenticated with SPF/DKIM); the app never talks to Brevo itself, there is nothing to configure and no credential to ask for. If the user asks which provider sends the mail, it is Brevo via VCS.
 
 - Every deployed app receives two variables: `VCS_EMAIL_URL` and `VCS_EMAIL_TOKEN` (a secret). An app deployed before 2026-10-09 gets them on its next deploy.
 - Mail arrives from `vcs-official@fdcdentalclinic.co.id`. The app chooses only the display name (`from_name`, default: the app name), never the address, so it cannot send as `admin@` or another mailbox. When recipients should reply to a person or team, set `reply_to`.
