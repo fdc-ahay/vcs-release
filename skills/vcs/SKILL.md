@@ -10,9 +10,9 @@ Read the user's intent. Mentioning VCS does not authorize deployment. Explain qu
 For authorized deployment, execute through your tools; never ask the user to open a terminal, run setup, select a model, or start another agent session.
 
 1. Use the bundled executable `${CLAUDE_PLUGIN_ROOT}/scripts/vcs` (Claude Code; Codex and OpenCode receive the plugin root path in their injected context). It works before CLI installation or PATH setup: the first call downloads the CLI for this plugin version from GitHub (a few seconds, checksum-verified, cached), so the first run needs network access. Every command prints one JSON object whose `status` is `ready`, `needs_auth`, `needs_input`, `running`, `succeeded` or `failed`, with a stable `code`; branch on that, never on prose. Run `auth status`; on `needs_auth` run `auth login`. It returns at once with `url` and `user_code`: show both to the user and ask them to open the link in the browser where they are signed in to VCS, check the code matches, and click Approve (the only click; never ask for passwords or keys). Then run `auth login --wait`, which returns as soon as they approve (run it with a long timeout or in the background). This works when you run inside a sandbox such as Claude Desktop, because nothing needs to call back into it. If any VCS command cannot reach the host (network or 403 errors from a proxy), the sandbox's network policy blocks it: tell the user an organization owner must allow `vcs.ibbr.info` and `git-vcs.ibbr.info` (plus `github.com` for the CLI download) in the allowed domains for code execution, then retry. Browser authentication may require the user's existing login; use native question UI only when necessary. Never alter subscription/provider settings.
-2. Run `agent inspect`. Inspect existing Dockerfile, workload, start command, readiness, and config. Preserve language, own auth, database, SMTP, push, Calendar, cache, and other integrations. HTTP containers are supported; report job/worker/multi-service target limitations explicitly.
+2. Run `agent inspect`. Inspect existing Dockerfile, workload, start command, readiness, and config. Preserve language, business behavior, own auth, data, push, Calendar and required integrations. Inspect queue consumers, schedulers, email delivery and storage against the platform rules below before proposing infrastructure. HTTP containers are supported; a worker target in the repository does not authorize an always-on worker.
 3. Run `agent adopt` when unbound. Pass `--division VALUE` only when the user already stated it; never ask for division — when unresolved the platform labels it `-`. On `needs_input`, ask only the missing question through Claude Code AskUserQuestion, Codex native questions, or OpenCode native questions. Never read interactive stdin. Re-run with answers. Do not invent secrets.
-4. Do not hand-write build files first: `agent deploy` prepares the deployment commit itself. It generates a Dockerfile and `.dockerignore` when none exists, adds the build workflow, records a non-default port in `vcs.yaml` (from `--port` or the Dockerfile's `EXPOSE`), and commits only those files. It never rewrites an existing Dockerfile. Do not inject IAP, observability, rating, or business features, and never commit `.env` or credentials. Secrets the app needs (database URL, SMTP, API keys) never go through chat: the user's `.env.production` or `.env` is pushed with `env push --from FILE`, which prints variable names only, never values.
+4. Do not hand-write build files first: `agent deploy` prepares the deployment commit itself. It generates a Dockerfile and `.dockerignore` when none exists, adds the build workflow, records a non-default port in `vcs.yaml` (from `--port` or the Dockerfile's `EXPOSE`), and commits only those files. It never rewrites an existing Dockerfile. Do not inject IAP, observability, rating, or business features, and never commit `.env` or credentials. Secrets the app needs (existing external database URLs, OAuth client secrets, API keys) never go through chat: the user's `.env.production` or `.env` is pushed with `env push --from FILE`, which prints variable names only, never values.
    Databases and caches need nothing from the user: when the code depends on a PostgreSQL or Redis client (`pg`, Prisma with `postgresql`, `psycopg`, `pgx`, `ioredis`, ...) and the project has no `DATABASE_URL`/`REDIS_URL` of its own, `agent deploy` makes VCS create them and inject `DATABASE_URL`, `DATABASE_OWNER_URL` (for the app's schema migrations), `REDIS_URL` and `VALKEY_URL` (reported as `resources`). Never ask the user for a database, never suggest a workaround health path, and never push a local URL (localhost, Compose service names are skipped automatically). A VCS database starts empty, so before deploying make sure the app creates its own schema at startup, idempotently: if tables come only from a manual script (`npm run db:init`, `schema.sql`, `prisma migrate deploy`, `alembic upgrade`), run that on boot (`CREATE TABLE IF NOT EXISTS`, `ON CONFLICT DO NOTHING` seeds) in the app's own code, then commit.
 5. Run `agent deploy`. Same `--division` rule as step 3; `--health-path /path` when the readiness endpoint is not `/healthz`; `--port N` when the app does not listen on 8080; `--slug NAME` to choose the project name (a taken slug gets a short suffix automatically, and an existing project of yours is reused). Server builds source; local Docker is unnecessary. The command stops with a stable `code` you resolve yourself, without asking the user unless stated:
    - `DIRTY_TREE` (needs_input): commit your own work (never secrets) and run again; `--deploy-head` deploys the last commit as it is. Ask only if a listed file is not yours.
@@ -28,13 +28,35 @@ For authorized deployment, execute through your tools; never ask the user to ope
 - **External APIs need no VCS permission.** Tableau, Meta, TikTok, Google Ads, Gmail, Google Calendar, payment or any other HTTPS API can be called directly; outbound internet access is open. The project permission list (PostgreSQL, Redis, MongoDB, Fast API, WRAP API, JOBI API, Helpy Happy API, FDC API) only names resources VCS provisions or brokers; nothing else is blocked by it, and the deploy gate never checks it. Never tell the user an integration needs the platform team's approval. API tokens are secrets: collect them with `env request --names …`, never in the repo or the chat.
 - **Only HTTP services run.** There is no worker, queue consumer or cron kind, and CPU is allocated only while a request is being served (request based), so work started in the background after a response, timers and in-process schedulers do not run reliably. Long work must finish inside one request (Cloud Run allows up to about 5 minutes per request by default) or be split into several requests.
 - **Scheduled work (daily refresh, reminders, digests) uses a Claude Cowork scheduled task**, not code inside the app:
-  1. Add an endpoint such as `POST /internal/refresh` that does the whole job synchronously and is safe for anyone to call: idempotent, a no-op when the last successful run was recent (for example within 30 minutes), returns only a status (never data), and logs what it did. Then no secret is needed to trigger it.
+  1. Add a bounded, authenticated POST operation that does the job synchronously, checks the app permission and CSRF protection, returns counts/status without recipient data, and persists its work. Cowork uses the app's signed-in browser and an admin action; never expose mail sending, data refresh or mutations publicly to avoid authentication. Do not put credentials or long-lived trigger tokens in task text or URLs. An unavailable authenticated session requires reauthentication, not an auth bypass.
   2. Deploy, then call it once yourself and check the result.
-  3. Tell the user to create a scheduled task in Claude Cowork (Claude Desktop) at the time they want, for example every day 07:15, with an instruction such as: "Send `POST https://<app>/internal/refresh` and report the status in one line; if it is not 2xx, tell me." Cowork runs scheduled tasks while their computer is on and Claude Desktop is open, so mention that, and keep the endpoint safe to call again later the same day if a run was missed.
+  3. Guide the user to create a Claude Cowork scheduled task using the explicit `Asia/Jakarta` timezone. A daily digest runs at 07:00 WIB. Example: "Open the app's admin digest page in my signed-in browser, run today's digest, and report sent/pending/failed counts. If sign-in is needed or the action fails, tell me." Cowork requires the computer and Claude Desktop to be available; explain missed-run behavior and support a safe manual retry. Claiming a date is not delivery: persist pending jobs atomically, and mark each channel sent only after provider acceptance.
   Do not try to deploy a separate job or worker for this.
 - **AI inside the app** goes through the VCS AI gateway: base URL `https://vcs.ibbr.info/api/v1/ai` (OpenAI paths such as `/chat/completions`, Anthropic paths such as `/messages`), `model` set to a slug from `GET /api/v1/ai-models`, and a `vcs_` API key with scope `ai_models:use` that the user creates on the VCS API Keys page and pastes on the `env request` page (for example as `AI_GATEWAY_KEY`; names starting with `VCS_` are reserved). Usage is metered to that user.
 
-- **Email from the app needs no SMTP setup**: see "Sending email from an app" below.
+- **Email uses the VCS delivery API**, including adopted apps: see "Sending email from an app" below.
+- **Object storage uses the shared VCS GCS bucket**, with server-enforced project prefixes: read [storage.md](storage.md) when the app stores files. No S3/HMAC setup or bucket creation by apps.
+
+### Runtime design rules
+
+Verify requirements in source code before requesting infra. Separate platform bugs, app bugs, provider configuration and unsupported execution targets. Do not label the existing implementation's worker, queue or S3 protocol as a mandatory business requirement.
+
+- Keep request-based billing and scale-to-zero as defaults. Do not request always-on CPU, worker pools, min-instances 1 or max-instances 1 to hide correctness bugs. A different deployment model requires an explicit platform decision supported by measured latency, volume or execution requirements.
+- Complete work before returning HTTP. Detached promises, `setInterval`, BullMQ consumers and cron inside the HTTP container are unreliable. Use existing PostgreSQL transactions for notifications and retryable delivery; scheduled batches use Cowork. Report any remaining requirement for unattended execution rather than claiming Cowork guarantees it.
+- Persist domain changes and pending deliveries atomically. Marking an activity processed before enqueue, or marking a digest sent before sending, can lose notifications. Provider timeouts may mean a message was accepted: use provider idempotency when available and disclose duplicate-delivery limits.
+- Prefer short polling while the tab is visible; pause hidden tabs and refresh after mutations. SSE/WebSocket requires a measured latency need, reconnect/catch-up, bounded connections and cleanup. A long open request remains billable; a one-hour timeout does not make it free.
+- Redis provides shared rate limits, lockout, anti-replay and cache with TTL and the project's authorized key/channel prefix. Never replace production security state with process memory or disable TLS validation. Redis outages require bounded connection/command timeouts; endless worker retry settings must not leak into HTTP clients. Read prefix/ACL errors before granting broader permissions.
+- A readiness endpoint is public but returns only status. Failed readiness must return non-2xx; a JSON error with HTTP 200 is healthy to an HTTP probe. Do not expose error buffers or temporary diagnosis endpoints publicly. Use logs/owner-only diagnostics and remove test endpoints before production use.
+- Startup schema migrations use `DATABASE_OWNER_URL`, with concurrency control and atomic migration bookkeeping. Runtime requests use `DATABASE_URL`. Sync only the permission catalog/defaults idempotently, never insert demo users or sample business data in production. Preserve existing grants and settings.
+- Cross-build native dependencies must include runtime linux/x64 binaries in the final image, not merely in the builder's dependency lock. Verify the actual image; do not request QEMU or disable password hashing/image checks.
+
+### OAuth and application authentication
+
+Applications own login and authorization; VCS deploy/device authentication is separate. Never inject IAP, require Google-only login or reuse a VCS admin JWT/service identity as an app user's identity.
+
+For authorized OAuth integration, inspect the app's callback path, public domain, trusted origins, required scopes and provider restrictions. Configure the exact HTTPS redirect URI and test real sign-in; an HTTP 200 page is not proof OAuth works. Keep client secrets, refresh tokens and session keys server-side and collect them through `env request`; never put bearer tokens in URLs/chat, trust an email string as proof of identity, or weaken CSRF/state/PKCE checks. Request only scopes the feature actually needs. Google OAuth login does not authorize email delivery outside VCS. A sender address is not an OAuth identity or mailbox.
+
+IP-dependent security must use the verified trusted-proxy chain; never blindly trust the first `X-Forwarded-For` value. Verify LB and direct `run.app` ingress behavior before claiming spoof resistance. Missing provider-console access is a specific configuration step, not a reason to ask for unrelated infra.
 
 ### Sending email from an app
 
@@ -48,13 +70,13 @@ Use this whenever the app must email someone (notifications, reminders, reports,
 Node.js:
 ```js
 async function sendEmail({ to, subject, text, html, replyTo }) {
-  if (!process.env.VCS_EMAIL_URL) { console.log('[email]', to, subject); return } // local development
+  if (!process.env.VCS_EMAIL_URL || !process.env.VCS_EMAIL_TOKEN) throw new Error('VCS email is unavailable')
   const res = await fetch(process.env.VCS_EMAIL_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.VCS_EMAIL_TOKEN}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ to, subject, text, html, reply_to: replyTo, from_name: 'Jadwal Dokter' }),
   })
-  if (!res.ok) console.error('[email] failed', res.status, await res.text())
+  if (res.status !== 202) throw new Error(`VCS email failed: ${res.status}`)
 }
 ```
 
@@ -63,19 +85,20 @@ Python:
 import os, requests
 def send_email(to, subject, text=None, html=None, reply_to=None):
     url = os.environ.get("VCS_EMAIL_URL")
-    if not url:
-        print("[email]", to, subject); return  # local development
+    if not url or not os.environ.get("VCS_EMAIL_TOKEN"):
+        raise RuntimeError("VCS email is unavailable")
     r = requests.post(url, timeout=30, json={"to": to, "subject": subject, "text": text, "html": html, "reply_to": reply_to},
                       headers={"Authorization": f"Bearer {os.environ['VCS_EMAIL_TOKEN']}"})
     if r.status_code != 202:
-        print("[email] failed", r.status_code, r.text)
+        raise RuntimeError(f"VCS email failed: {r.status_code}")
 ```
 
 Request body: `to` (one address or a list of at most 50), `subject`, `text` and/or `html` (at least one), optional `reply_to`, `from_name`. Everyone in one message sees the other recipients, so for bulk mail send one request per person. Answers: `202` sent; `400` invalid message (the error says which field); `401` bad token; `429` over 500 recipients per app per 24 hours; `503` platform email not configured yet; `502` relay refused. No attachments: link to a page in the app instead.
 
 Rules:
-- A failed email must not fail the user's action: log it and continue (or retry later).
-- Do not add an SMTP library (nodemailer, smtplib …) or a mail service (Resend, SendGrid …), and do not ask the user for SMTP credentials. Apps that already have their own mail setup keep it; switch them to VCS email only when the user asks.
+- All app-generated invitations, resets, notifications and reports must use VCS email. During authorized VCS adoption, replace SMTP/provider delivery adapters while preserving templates and business behavior. Gmail OAuth `gmail.send`, direct Brevo, Resend or other providers must not bypass VCS sender, quota or audit rules. Genuine mailbox-reading integrations may keep their required OAuth scopes.
+- Email failure must not erase the business action or be reported as sent. Persist a retryable delivery with a stable dedupe key; show delivery status. Never silently discard production email when Redis or configuration is unavailable. Password reset and invitation responses must not claim delivery when none happened, while preserving anti-enumeration behavior.
+- Do not add SMTP libraries or ask users for SMTP credentials. VCS relay credentials never belong to an app. The app's storage, OAuth, and VCS API tokens stay server-side.
 - After deploying, test once by sending an email to the user's own address and ask them to confirm it arrived (check spam on first use).
 
 ### Moving a Claude artifact to VCS
