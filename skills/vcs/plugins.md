@@ -3,7 +3,7 @@
 VCS Plugins are project-scoped third-party connections. They are separate from this
 Claude delivery plugin. First provider: shared FDC Google Ads, read-only reports.
 
-1. Owner requests access in the project's **VCS Plugins** tab with a purpose.
+1. Follow [access.md](access.md): the agent collects the approved purpose through native question UI, runs `vcs plugins request`, and monitors the request ID. The project's **VCS Plugins** tab remains available as a web alternative.
 2. VCS administrator grants specific Google Ads Customer IDs in **Backoffice → VCS Plugins**.
 3. Redeploy to receive server-side `VCS_PLUGIN_URL` and secret `VCS_PLUGIN_TOKEN`.
 4. App backend sends `POST ${VCS_PLUGIN_URL}/google-ads/reports`, with

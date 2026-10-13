@@ -1,1 +1,1 @@
-{"name":"vcs-release","owner":{"name":"FDC Engineering"},"plugins":[{"name":"vcs","source":"./","version":"0.1.55","description":"Agent-first VCS delivery"}],"metadata":{"description":"VCS native agent delivery plugins"}}
+{"name":"vcs-release","owner":{"name":"FDC Engineering"},"plugins":[{"name":"vcs","source":"./","version":"0.1.56","description":"Agent-first VCS delivery"}],"metadata":{"description":"VCS native agent delivery plugins"}}

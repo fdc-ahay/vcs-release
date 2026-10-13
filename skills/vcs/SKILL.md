@@ -170,6 +170,8 @@ For optional PostgreSQL migration, agent exports with native `pg_dump --format=c
 
 ### Private database access
 
+For agent-driven requests, native questions, approval monitoring and integration, read [access.md](access.md). Execute the CLI yourself; the web page is the reviewer/secret-entry fallback.
+
 1. Open the project's **Data Access** tab or run `vcs data-access list --owner OWNER --project PROJECT --json`.
 2. Select **datalake BI** (`datalake-bi`). Ask the user for the access purpose; use their approved text. Do not invent a purpose or include passwords or patient data.
 3. Submit with the web form or `vcs data-access request --owner OWNER --project PROJECT --database datalake-bi --purpose "USER-APPROVED PURPOSE" --json`.
