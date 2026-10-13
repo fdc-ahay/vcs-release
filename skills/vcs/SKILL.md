@@ -177,3 +177,7 @@ For optional PostgreSQL migration, agent exports with native `pg_dump --format=c
 5. Wait for `granted`. `pending` needs reviewer action; `granting` means infrastructure is applying; `failed` needs reviewer retry. Never report access enabled before `granted`.
 6. Grant applies only to this project's Cloud Run network tag and the private BI endpoint. VCS attaches tags to existing services and preserves them on future deployments. Do not request static instance IPs, NAT gateways, per-project subnets, public database ingress, or broad subnet grants.
 7. Configure database credentials in project secrets. Never email credentials or commit them. Use the connection details shown on the granted request, download the trusted public BI certificate from `https://vcs.ibbr.info/certs/datalake-bi.pem`, verify TLS with that certificate (never disable verification), use read-only access, bounded connection pools and query timeouts. Network approval does not supply a database password.
+
+## Third-party application integrations
+
+For app access to Google Ads, read [plugins.md](plugins.md). Use project-scoped VCS Plugins grants and server-side injected credentials. Shared FDC connection supports read-only reports; never repurpose personal MCP OAuth tokens as app credentials.
