@@ -34,6 +34,7 @@ For authorized deployment, execute through your tools; never ask the user to ope
   Do not try to deploy a separate job or worker for this.
 - **AI inside the app** goes through the VCS AI gateway: base URL `https://vcs.ibbr.info/api/v1/ai` (OpenAI paths such as `/chat/completions`, Anthropic paths such as `/messages`), `model` set to a slug from `GET /api/v1/ai-models`, and a `vcs_` API key with scope `ai_models:use` that the user creates on the VCS API Keys page and pastes on the `env request` page (for example as `AI_GATEWAY_KEY`; names starting with `VCS_` are reserved). Usage is metered to that user.
 
+- **Device push uses native Web Push**, with service worker, subscription and OS permission: follow "Native device push notifications" below. In-app polling only refreshes UI.
 - **Email uses the VCS delivery API**, including adopted apps: see "Sending email from an app" below.
 - **Object storage uses the shared VCS GCS bucket**, with server-enforced project prefixes: read [storage.md](storage.md) when the app stores files. No S3/HMAC setup or bucket creation by apps.
 
@@ -49,6 +50,31 @@ Verify requirements in source code before requesting infra. Separate platform bu
 - A readiness endpoint is public but returns only status. Failed readiness must return non-2xx; a JSON error with HTTP 200 is healthy to an HTTP probe. Do not expose error buffers or temporary diagnosis endpoints publicly. Use logs/owner-only diagnostics and remove test endpoints before production use.
 - Startup schema migrations use `DATABASE_OWNER_URL`, with concurrency control and atomic migration bookkeeping. Runtime requests use `DATABASE_URL`. Sync only the permission catalog/defaults idempotently, never insert demo users or sample business data in production. Preserve existing grants and settings.
 - Cross-build native dependencies must include runtime linux/x64 binaries in the final image, not merely in the builder's dependency lock. Verify the actual image; do not request QEMU or disable password hashing/image checks.
+
+### Native device push notifications
+
+When push notifications are requested, implement **Web Push to the device's OS notification center**. An in-app bell, toast, polling, SSE or WebSocket is not device push. Preserve working native push when adopting an app. Do not add unsolicited push features.
+
+**Required on every device:** public HTTPS, a supported browser, an active same-origin service worker, notification permission, a saved push subscription, and browser/OS notifications enabled. Feature-detect `Notification`, `serviceWorker` and `PushManager`; never claim support from the device name alone.
+
+| Device | Extra requirement / instruction shown to the user |
+|---|---|
+| Desktop | Use a supported browser. Allow notifications for this site and browser in OS settings. PWA installation is not generally required. |
+| Android | Use a browser supporting Web Push, such as Chrome. Allow site/browser notifications. PWA installation is optional for supported browsers. |
+| iPhone / iPad | iOS/iPadOS 16.4+. Provide a manifest with stable `id`, `name`, `start_url`, icons and `display: standalone`. Tell the user: **Add to Home Screen → open that icon → tap Enable notifications → Allow**. A normal browser tab is insufficient. |
+
+Implement in this order:
+
+1. **Install and permission UI.** Show an explicit Enable notifications button and the device instructions above. Call `Notification.requestPermission()` directly from the user's click/tap, never on page load. If denied, show browser/OS settings guidance; do not keep prompting. Show honest states: unsupported, install required, permission needed, blocked, enabled.
+2. **Service worker.** Serve it on the app's HTTPS origin with scope covering the app. Register it and wait for `navigator.serviceWorker.ready`. Keep existing service-worker/PWA behavior intact.
+3. **Subscribe.** Reuse `pushManager.getSubscription()` or call `subscribe({ userVisibleOnly: true, applicationServerKey: publicVapidKey })`. Keep a stable VAPID key pair; public key may reach the browser, private key stays in server secrets. Native browser push services need no extra VCS resource or paid notification vendor.
+4. **Save per device.** An authenticated, CSRF-protected app endpoint stores `endpoint`, `p256dh`, `auth`, and the signed-in user's ID. Derive that ID server-side. Support several devices per user. Treat subscriptions as private credentials; never log them. Unsubscribe removes the device subscription; logout/account switching unbinds it so the next user cannot receive the previous user's notifications.
+5. **Send from the server.** Use a maintained Web Push library with VAPID and payload encryption. Validate subscription endpoints against supported push-service origins; reject arbitrary URLs, redirects and private network targets. Persist notification work with the domain transaction, then send within a bounded HTTP request. Scheduled batches use the authenticated Cowork action. No detached sends, permanent worker, browser polling or SSE as a substitute.
+6. **Display and open.** In the worker's `push` handler, use `event.waitUntil(registration.showNotification(...))` to display a visible OS notification. In `notificationclick`, close it and focus/open the intended same-origin app page using `event.waitUntil(...)`. Recheck login and access on that page. Keep sensitive data out of lock-screen text and notification URLs.
+7. **Handle failure.** Delete expired subscriptions on push-service HTTP 404/410. Bound retries for timeouts/429/5xx, honor Retry-After and use a useful TTL. Refresh subscription state when the app opens. Provider acceptance means accepted, not displayed or read. Offline devices, expiry, OS settings, Focus/Do Not Disturb and browser force-quit can delay or prevent display; never promise guaranteed delivery.
+8. **Prove device integration.** Send a real server push to each supported target: desktop, Android and an installed iPhone/iPad app when in scope. Put the app in the background/close its tab, confirm a notification in the OS notification center, then tap it and verify the correct authorized page. Also check denied permission, expired subscription and logout/account switching. A toast, a mocked push event or HTTP 2xx is insufficient. Record device/browser and result; unavailable devices remain explicitly unverified.
+
+Sources: [WebKit iOS/iPadOS requirements](https://webkit.org/blog/13878/), [Push API](https://developer.mozilla.org/en-US/docs/Web/API/Push_API), [notification permissions](https://developer.mozilla.org/en-US/docs/Web/API/Notifications_API/Using_the_Notifications_API).
 
 ### OAuth and application authentication
 
@@ -141,3 +167,13 @@ Do not claim unsupported adapters or marketplace activation tests passed. Disabl
 Adopted applications must appear as usable projects in VCS Sites. After release, inspect that listing and report a platform error if absent; never recreate or scaffold the adopted application. For domain intent or first-time custom-domain setup, read [domains.md](domains.md).
 
 For optional PostgreSQL migration, agent exports with native `pg_dump --format=custom` (or uses a host's pg_dump export as is: custom archive, or a pg_dump directory packed as `.tar.gz`), prepares role mapping (validation counts/RLS expectations are optional; without them the server counts rows from the archive), then uses `database migration create --archive FILE --role-map SOURCE=runtime --role-map OWNER=migration [--validation-file FILE]`, `upload --id ID --archive FILE`, `dry-run --id ID`, and `status --id ID`. Include owner/project flags. Never ask the user to run export or open a terminal. Two-pass order (when no downtime window was approved up front): (1) a dry-run session from any dump to validate; (2) when the user approves the downtime window through native UI, have them stop source writes, export again and `create ... --source-writes-stopped` for a new session, upload, `dry-run`; (3) `cutover --confirmed --application-smoke-tested --source-writes-stopped` only on that final session; the server refuses cutover otherwise. Flags attest real completed checks and native UI production approval; never fabricate them. `database migration rollback --confirmed` returns the app to its previous database (data written since cutover is not copied back). If `pg_dump` is newer than the production server's major version, export with the matching version.
+
+### Private database access
+
+1. Open the project's **Data Access** tab or run `vcs data-access list --owner OWNER --project PROJECT --json`.
+2. Select **datalake BI** (`datalake-bi`). Ask the user for the access purpose; use their approved text. Do not invent a purpose or include passwords or patient data.
+3. Submit with the web form or `vcs data-access request --owner OWNER --project PROJECT --database datalake-bi --purpose "USER-APPROVED PURPOSE" --json`.
+4. VCS emails designated reviewers a review link. Only their signed-in VCS accounts can Grant/Reject. Agents, API keys, owners, and email-link GET requests cannot approve.
+5. Wait for `granted`. `pending` needs reviewer action; `granting` means infrastructure is applying; `failed` needs reviewer retry. Never report access enabled before `granted`.
+6. Grant applies only to this project's Cloud Run network tag and the private BI endpoint. VCS attaches tags to existing services and preserves them on future deployments. Do not request static instance IPs, NAT gateways, per-project subnets, public database ingress, or broad subnet grants.
+7. Configure database credentials in project secrets. Never email credentials or commit them. Use the connection details shown on the granted request, download the trusted public BI certificate from `https://vcs.ibbr.info/certs/datalake-bi.pem`, verify TLS with that certificate (never disable verification), use read-only access, bounded connection pools and query timeouts. Network approval does not supply a database password.
